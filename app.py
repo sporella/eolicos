@@ -6,6 +6,24 @@ import altair as alt
 import folium
 from streamlit_folium import st_folium
 from datetime import date, timedelta
+import io
+import streamlit as st
+import folium
+from streamlit_folium import st_folium
+import geopandas as gpd
+from shapely.geometry import Point
+
+# --- Cargar polígono de Chile desde el archivo ligero ---
+@st.cache_resource
+def load_chile():
+    return gpd.read_file("chile_outline2.geojson")
+
+chile = load_chile()
+
+def is_inside_chile(lat, lon):
+    """Verifica si un punto (lat, lon) está dentro de Chile."""
+    point = Point(lon, lat)  # shapely usa (x=lon, y=lat)
+    return chile.contains(point).any()
 
 # === Configuración de página ===
 st.set_page_config(
@@ -66,7 +84,7 @@ model = load_model()
 st.title("⚡ Predicción de Generación Eólica en Chile")
 st.markdown(
     "Selecciona una ubicación en el mapa y un rango de fechas para obtener el pronóstico horario de "
-    "generación eólica basado en la API de **Open-Meteo** y tu modelo entrenado."
+    "generación eólica basado en la API de **Open-Meteo** y el modelo RamdomForest."
 )
 
 # === Estado inicial del marker ===
@@ -107,17 +125,20 @@ with col1:
     # Actualizar marker inmediatamente al hacer click
     if map_data and map_data.get("last_clicked"):
         lat, lng = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-        if [lat, lng] != st.session_state.marker_location:
-            st.session_state.marker_location = [lat, lng]
-            st.session_state.zoom = map_data["zoom"]
-            st.session_state.loading_map = True
-            # Redibujar mapa con nueva ubicación
-            m = folium.Map(location=st.session_state.marker_location, zoom_start=st.session_state.zoom)
-            folium.Marker(
-                location=st.session_state.marker_location,
-                draggable=False
-            ).add_to(m)
-            st_folium(m, width=480, height=500, key="folium_map")
+        if is_inside_chile(lat, lng):
+            if [lat, lng] != st.session_state.marker_location:
+                st.session_state.marker_location = [lat, lng]
+                st.session_state.zoom = map_data["zoom"]
+                st.session_state.loading_map = True
+                # Redibujar mapa con nueva ubicación
+                m = folium.Map(location=st.session_state.marker_location, zoom_start=st.session_state.zoom)
+                folium.Marker(
+                    location=st.session_state.marker_location,
+                    draggable=False
+                ).add_to(m)
+                st_folium(m, width=480, height=500, key="folium_map")
+        else:
+            st.warning("⚠️ El punto está fuera de Chile. Por favor selecciona dentro del país.")
 
 # --- Columna resultados ---
 with col2:
@@ -187,15 +208,29 @@ with col2:
         """, unsafe_allow_html=True)
 
         # --- Dataframe ---
-        st.dataframe(df[["time", "prediction (mW/h)"]])
+
+        with st.expander("📊 Ver tabla de datos"):
+            # Mostrar la tabla en pantalla
+            st.dataframe(df[["time", "prediction (mW/h)"]])
+
+            # Convertir dataframe a CSV
+            csv = df.to_csv(index=False).encode("utf-8")
+
+            # Botón para descargar
+            st.download_button(
+                label="💾 Descargar datos en CSV",
+                data=csv,
+                file_name="datos.csv",
+                mime="text/csv"
+            )
 
         # --- Gráfico con gradiente ---
         chart = alt.Chart(df).mark_area(
-            line={"color": "#0d3b66"},
+            line={"color": "#1ca06e"},
             color=alt.Gradient(
                 gradient='linear',
-                stops=[alt.GradientStop(color="#0d3b66", offset=0),
-                       alt.GradientStop(color="#a9cfe7", offset=1)],
+                stops=[alt.GradientStop(color="#0b7437", offset=0),
+                       alt.GradientStop(color="#7ACA79", offset=1)],
                 x1=1, y1=1, x2=1, y2=0
             ),
             opacity=0.5
