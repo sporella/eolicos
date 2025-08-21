@@ -16,7 +16,7 @@ from shapely.geometry import Point
 # --- Cargar polígono de Chile desde el archivo ligero ---
 @st.cache_resource
 def load_chile():
-    return gpd.read_file("chile_outline2.geojson")
+    return gpd.read_file("chile_outline.geojson")
 
 chile = load_chile()
 
